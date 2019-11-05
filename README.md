@@ -5,4 +5,4 @@ to create elaborate test cases or fully implement the API. My use case for this 
 subset of the API will be implemented. I also have no intent to currently publish this to any shared package
 repository (e.g. hackage or stackage).
 
-** Contributions are always welcome! **
+**Contributions are always welcome!**

@@ -1,21 +1,17 @@
-module Database.ArangoDB where
+module Database.ArangoDB (Client, newClient) where
 
-import Database.ArangoDB.Database (DatabaseError, Database)
+import Data.Maybe (fromMaybe)
 
-import qualified Data.ByteString.Lazy as LBS
+import Database.ArangoDB.Internal (Client(..))
 
 import qualified Network.HTTP.Client as HTTP
+import qualified Network.HTTP.Types.Header as HTTP
 
-newtype Client = Client
-  { cManager :: !HTTP.Manager
-  }
-
-data User = User
-  { uUsername :: !T.Text
-  , uPassword :: !T.Text
-  , uActive   :: !Boolean
-  , uExtra    :: !LBS.ByteString
-  }
-
-createDatabase :: Client -> Name -> [User] -> IO (Either ErrorDatabase Database)
-createDatabase c n users = undefined
+newClient :: String -> Maybe HTTP.ManagerSettings -> IO Client
+newClient addr mSettings = do
+  mgr <- HTTP.newManager (fromMaybe HTTP.defaultManagerSettings mSettings)
+  req <- HTTP.setRequestIgnoreStatus <$> HTTP.parseRequest addr
+  return $ Client addr (jReq req) mgr
+ where
+  jHeader = (HTTP.hContentType, "application/rdf")
+  jReq req = req { HTTP.requestHeaders = jHeader : HTTP.requestHeaders req }

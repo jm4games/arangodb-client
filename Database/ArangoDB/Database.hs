@@ -23,8 +23,9 @@ data DatabaseError
   | DbErrSystemFailure
   | DbErrAlreadyExists
   | DbErrUnknown HTTP.Status
+  deriving Show
 
-mkDbReq :: Name -> HTTP.Request -> (Path -> HTTP.Request)
+mkDbReq :: Name -> HTTP.Request -> MkReq
 mkDbReq n req = \p -> req { HTTP.path = "/_db/" <> bs <> p } where bs = encodeUtf8 n
 
 createDatabase :: Client -> Name -> [User] -> IO (Either DatabaseError Database)

@@ -26,7 +26,7 @@ import qualified Network.HTTP.Types.Status as HTTP
 
 data CollectionError
   = ColErrNoName
-  | ColErrInvalidRequest
+  | ColErrInvalidRequest T.Text
   | ColErrAlreadyExist
   | ColErrUnknown HTTP.Status T.Text
   deriving Show
@@ -100,7 +100,7 @@ createCollection c db cfg = do
   return $ case HTTP.responseStatus res of
     x | x == HTTP.status200 -> Right (Collection (ccName cfg) (mkColReq db (ccName cfg)))
     x | x == HTTP.status400 -> Left ColErrNoName
-    x | x == HTTP.status404 -> Left ColErrInvalidRequest
+    x | x == HTTP.status404 -> Left (ColErrInvalidRequest (readErrorMessage res))
     x | x == HTTP.status409 -> Left ColErrAlreadyExist
     x                       -> Left (ColErrUnknown x (readErrorMessage res))
  where

@@ -32,6 +32,14 @@ data Collection = Collection
 instance Show Collection where
   show c = "Collection{" <> T.unpack (colName c) <> "}"
 
+data Graph = Graph
+  { gphName  :: !Name
+  , gphMkReq :: !MkReq
+  }
+
+instance Show Graph where
+  show c = "Graph{" <> T.unpack (gphName c) <> "}"
+
 newtype ErrorBody = ErrorBody { unwrapErrBody :: T.Text }
 
 instance A.FromJSON ErrorBody where

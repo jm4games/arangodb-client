@@ -19,7 +19,7 @@ import qualified Network.HTTP.Types.Method as HTTP
 import qualified Network.HTTP.Types.Status as HTTP
 
 data DatabaseError
-  = DbErrInvalidRequest
+  = DbErrInvalidRequest T.Text
   | DbErrSystemFailure
   | DbErrAlreadyExist
   | DbErrUnknown HTTP.Status T.Text
@@ -33,7 +33,7 @@ createDatabase c n users = do
   res <- HTTP.httpLbs req (cManager c)
   return $ case HTTP.responseStatus res of
     x | x == HTTP.status201 -> Right (Database n (mkDbReq n (cJsonReq c)))
-    x | x == HTTP.status400 -> Left DbErrInvalidRequest
+    x | x == HTTP.status400 -> Left (DbErrInvalidRequest (readErrorMessage res))
     x | x == HTTP.status403 -> Left DbErrSystemFailure
     x | x == HTTP.status409 -> Left DbErrAlreadyExist
     x                       -> Left (DbErrUnknown x (readErrorMessage res))

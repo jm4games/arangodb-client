@@ -21,8 +21,8 @@ import qualified Network.HTTP.Types.Status as HTTP
 data DatabaseError
   = DbErrInvalidRequest
   | DbErrSystemFailure
-  | DbErrAlreadyExists
-  | DbErrUnknown HTTP.Status
+  | DbErrAlreadyExist
+  | DbErrUnknown HTTP.Status T.Text
   deriving Show
 
 mkDbReq :: Name -> HTTP.Request -> MkReq
@@ -35,8 +35,8 @@ createDatabase c n users = do
     x | x == HTTP.status201 -> Right (Database n (mkDbReq n (cJsonReq c)))
     x | x == HTTP.status400 -> Left DbErrInvalidRequest
     x | x == HTTP.status403 -> Left DbErrSystemFailure
-    x | x == HTTP.status409 -> Left DbErrAlreadyExists
-    x                       -> Left (DbErrUnknown x)
+    x | x == HTTP.status409 -> Left DbErrAlreadyExist
+    x                       -> Left (DbErrUnknown x (readErrorMessage res))
  where
   body = HM.fromList [("name" :: T.Text, A.String n), ("users", A.toJSON users)]
   req  = (cJsonReq c)
@@ -49,5 +49,5 @@ createOrGetDatabase :: Client -> Name -> [User] -> IO (Either DatabaseError Data
 createOrGetDatabase c n users = do
   res <- createDatabase c n users
   case res of
-    Left DbErrAlreadyExists -> return (Right $ Database n (mkDbReq n (cJsonReq c)))
+    Left DbErrAlreadyExist -> return (Right $ Database n (mkDbReq n (cJsonReq c)))
     _                       -> return res

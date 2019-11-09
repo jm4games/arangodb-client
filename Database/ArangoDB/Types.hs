@@ -7,6 +7,7 @@ import qualified Data.Text as T
 
 type Name = T.Text
 type Path = ByteString
+type CollectionName = Name
 
 data User = User
   { uUsername :: !T.Text

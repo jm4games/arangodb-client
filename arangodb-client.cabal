@@ -23,6 +23,7 @@ library
     Database.ArangoDB.Collection
     Database.ArangoDB.Database
     Database.ArangoDB.Graph
+    Database.ArangoDB.Index
     Database.ArangoDB.Types
 
   other-modules:

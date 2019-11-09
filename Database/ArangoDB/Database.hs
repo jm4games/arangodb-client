@@ -19,10 +19,10 @@ import qualified Network.HTTP.Types.Method as HTTP
 import qualified Network.HTTP.Types.Status as HTTP
 
 data DatabaseError
-  = DbErrInvalidRequest T.Text
+  = DbErrInvalidRequest !T.Text
   | DbErrSystemFailure
   | DbErrAlreadyExist
-  | DbErrUnknown HTTP.Status T.Text
+  | DbErrUnknown !HTTP.Status !T.Text
   deriving Show
 
 mkDbReq :: Name -> HTTP.Request -> MkReq

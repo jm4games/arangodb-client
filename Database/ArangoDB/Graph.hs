@@ -44,8 +44,6 @@ instance A.ToJSON GraphConfig where
     <> "edgeDefinitions" A..= gEdges c
     )
 
-type CollectionName = Name
-
 data EdgeDefinition = EdgeDefinition
   { edTo             :: ![CollectionName]
   , edFrom           :: ![CollectionName]

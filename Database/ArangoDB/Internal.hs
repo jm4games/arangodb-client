@@ -1,10 +1,13 @@
 {-# LANGUAGE KindSignatures #-}
 {-# LANGUAGE DataKinds #-}
+{-# LANGUAGE ExistentialQuantification #-}
 
 module Database.ArangoDB.Internal where
 
 import Database.ArangoDB.Key
 import Database.ArangoDB.Types
+
+import Data.Text.Encoding (encodeUtf8)
 
 import qualified Data.Aeson as A
 import qualified Data.Aeson.Types as A
@@ -13,6 +16,7 @@ import qualified Data.ByteString.Char8 as BS8
 import qualified Data.ByteString.Lazy as LBS
 import qualified Data.Text as T
 import qualified Network.HTTP.Client as HTTP
+import qualified Network.HTTP.Types as HTTP
 
 data Client = Client
   { cRootURL :: !String
@@ -59,3 +63,22 @@ instance A.FromJSON ErrorBody where
 
 readErrorMessage :: HTTP.Response LBS.ByteString -> T.Text
 readErrorMessage = maybe "" unwrapErrBody . A.decode . HTTP.responseBody
+
+class ToParamValue a where
+  toParamValue :: a-> BS.ByteString
+
+instance ToParamValue Bool where
+  toParamValue True  = "true"
+  toParamValue False = "false"
+
+instance ToParamValue T.Text where
+  toParamValue = HTTP.urlEncode False . encodeUtf8
+
+data Param = forall a. ToParamValue a =>Param (Maybe a)
+
+toQueryParams :: [(BS.ByteString, Param)] -> BS.ByteString
+toQueryParams = BS.intercalate "&" . filter (/= mempty) . fmap
+  (\(t, Param a) -> maybe mempty (mappend t . toParamValue) a)
+
+gzipHeader :: HTTP.Header
+gzipHeader = (HTTP.hContentEncoding, "gzip")

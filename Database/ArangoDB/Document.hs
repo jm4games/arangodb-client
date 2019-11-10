@@ -1,15 +1,31 @@
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE KindSignatures #-}
 
-module Database.ArangoDB.Document where
+module Database.ArangoDB.Document
+  ( CreateOptions(..)
+  , DocumentMeta(..)
+  , DocumentError(..)
+  , BulkImportOptions(..)
+  , BulkImportResult(..)
+  , BulkDocument(..)
+  , BulkHeader(..)
+  , DuplicateAction(..)
+  , createDocuments
+  , bulkImport
+  )
+where
 
 import Database.ArangoDB.Key
 import Database.ArangoDB.Types
 import Database.ArangoDB.Internal
 
+import Data.List (intersperse)
+
+import qualified Codec.Compression.GZip as GZip
 import qualified Data.Aeson as A
 import qualified Data.Aeson.Types as A
 import qualified Data.ByteString as BS
+import qualified Data.ByteString.Builder as BB
 import qualified Data.Text as T
 import qualified Network.HTTP.Client as HTTP
 import qualified Network.HTTP.Types.Method as HTTP
@@ -52,7 +68,7 @@ createDocuments col opts docs = do
   res <- HTTP.httpLbs req (colManager col)
   print (HTTP.responseBody res)
   return $ case HTTP.responseStatus res of
-    x | x == HTTP.status200 -> case dec of
+    x | x == HTTP.status200 || x == HTTP.status201 -> case dec of
       Right a   -> Right a
       Left  err -> Left $ DocErrParseResponse (T.pack err)
      where
@@ -64,24 +80,115 @@ createDocuments col opts docs = do
     x | x == HTTP.status409 -> Left (DocErrConflict (readErrorMessage res))
     x                       -> Left (DocErrUnknown x (readErrorMessage res))
  where
-  toBS True  = "true"
-  toBS False = "false"
-  path =
-    "/_api/document/"
-      <> colName col
-      <> "?"
-      <> ( BS.intercalate "&"
-         . filter (/= mempty)
-         $ [ maybe mempty (mappend "waitForSync=" . toBS) (coWaitForSync opts)
-           , maybe mempty (mappend "returnOld=" . toBS)   (coReturnOld opts)
-           , maybe mempty (mappend "silent=" . toBS)      (coSilent opts)
-           , maybe mempty (mappend "overwrite=" . toBS)   (coOverwrite opts)
-           ]
-         )
+  path = "/_api/document/" <> colName col <> "?" <> toQueryParams
+    [ ("waitForSync=", Param $ coWaitForSync opts)
+    , ("returnOld="  , Param $ coReturnOld opts)
+    , ("silent="     , Param $ coSilent opts)
+    , ("overwrite="  , Param $ coOverwrite opts)
+    ]
   body = case docs of
     [x] -> A.encode x -- Allows ArrangoDb to optimize
     _   -> A.encode docs
-  req = (dbMkReq (colDb col) path)
-    { HTTP.method      = HTTP.methodPost
-    , HTTP.requestBody = HTTP.RequestBodyLBS body
+  req = r
+    { HTTP.method         = HTTP.methodPost
+    , HTTP.requestBody    = HTTP.RequestBodyLBS (GZip.compress body)
+    , HTTP.requestHeaders = gzipHeader : HTTP.requestHeaders r
     }
+    where r = dbMkReq (colDb col) path
+
+class BulkDocument a where
+  bulkHeaders :: BulkHeader a
+  toBulkFormat :: a -> BB.Builder
+
+data BulkHeader a = BulkField BB.Builder | BulkFields [BulkHeader a]
+
+data BulkImportResult = BulkImportResult
+  { birCreated :: !Int
+  , birErrors  :: !Int
+  , birEmpty   :: !Int
+  , birUpdated :: !Int
+  , birIgnored :: !Int
+  , details    :: ![T.Text]
+  }
+
+instance A.FromJSON BulkImportResult where
+  parseJSON (A.Object r) =
+    BulkImportResult
+      <$>  r
+      A..: "created"
+      <*>  r
+      A..: "errors"
+      <*>  r
+      A..: "empty"
+      <*>  r
+      A..: "updated"
+      <*>  r
+      A..: "ignored"
+      <*>  (r A..:? "details" A..!= [])
+  parseJSON invalid = A.typeMismatch "BulkImportResult" invalid
+
+data BulkImportOptions = BulkImportOptions
+  { bioFromPrefix  :: !(Maybe T.Text)
+  , bioToPrefix    :: !(Maybe T.Text)
+  , bioOverwrite   :: !(Maybe Bool)
+  , bioOnDuplicate :: !(Maybe DuplicateAction)
+  , bioComplete    :: !(Maybe Bool)
+  , bioDetails     :: !(Maybe Bool)
+  }
+
+data DuplicateAction = DAError | DAUpdate | DAReplace | DAIgnore
+
+instance ToParamValue DuplicateAction where
+  toParamValue x = case x of
+    DAError   -> "error"
+    DAUpdate  -> "update"
+    DAReplace -> "replace"
+    DAIgnore  -> "ignore"
+
+bulkImport
+  :: forall a k
+   . BulkDocument a
+  => Collection k
+  -> BulkImportOptions
+  -> [a]
+  -> IO (Either DocumentError BulkImportResult)
+bulkImport col opts docs = do
+  res <- HTTP.httpLbs req (colManager col)
+  print (HTTP.responseBody res)
+  return $ case HTTP.responseStatus res of
+    x | x == HTTP.status201 -> case A.eitherDecode (HTTP.responseBody res) of
+      Right a   -> Right a
+      Left  err -> Left $ DocErrParseResponse (T.pack err)
+    x | x == HTTP.status400 -> Left (DocErrInvalidRequest (readErrorMessage res))
+    x | x == HTTP.status404 -> Left DocErrUnknownCollection
+    x | x == HTTP.status409 -> Left (DocErrConflict (readErrorMessage res))
+    x                       -> Left (DocErrUnknown x (readErrorMessage res))
+ where
+  params = toQueryParams
+    [ ("fromPrefix" , Param $ bioFromPrefix opts)
+    , ("toPrefix"   , Param $ bioToPrefix opts)
+    , ("overwrite"  , Param $ bioOverwrite opts)
+    , ("onDuplicate", Param $ bioOnDuplicate opts)
+    , ("complete"   , Param $ bioComplete opts)
+    , ("details"    , Param $ bioDetails opts)
+    ]
+  path =
+    "/_api/import?collection="
+      <> colName col
+      <> (if BS.length params > 0 then "&" <> params else mempty)
+  toField (BulkField  t ) = "\"" <> t <> "\""
+  toField (BulkFields ts) = "[" <> (mconcat . intersperse "," $ fmap toField ts) <> "]"
+  headers (BulkField t) = "[\"" <> t <> "\"]"
+  headers t             = toField t
+  body =
+    GZip.compress
+      .  BB.toLazyByteString
+      $  headers (bulkHeaders :: BulkHeader a)
+      <> "\n"
+      <> foldl (\agg v -> agg <> toBulkFormat v <> "\n") "" docs
+  req = r
+    { HTTP.method         = HTTP.methodPost
+    , HTTP.requestBody    = HTTP.RequestBodyLBS body
+    , HTTP.requestHeaders = gzipHeader : HTTP.requestHeaders r
+    }
+    where r = dbMkReq (colDb col) path

@@ -68,7 +68,7 @@ getDatabase c n = do
     x                       -> Left (DbErrUnknown x (readErrorMessage res))
  where
   req  = (cJsonReq c)
-    { HTTP.path        = "/_db/" <> encodeUtf8 n <> "/_api/database"
+    { HTTP.path        = "/_db/" <> encodeUtf8 n <> "/_api/database/current"
     , HTTP.method      = HTTP.methodGet
     }
 

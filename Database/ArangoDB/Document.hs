@@ -1,5 +1,6 @@
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE KindSignatures #-}
+{-# LANGUAGE ExistentialQuantification #-}
 
 module Database.ArangoDB.Document
   ( CreateOptions(..)
@@ -10,13 +11,14 @@ module Database.ArangoDB.Document
   , BulkDocument(..)
   , BulkHeader(..)
   , DuplicateAction(..)
+  , Edge(..)
+  , defCreateOptions
   , createDocuments
   , bulkImport
   )
 where
 
 import Database.ArangoDB.Key
-import Database.ArangoDB.Types
 import Database.ArangoDB.Internal
 
 import Data.List (intersperse)
@@ -38,8 +40,11 @@ data CreateOptions = CreateOptions
   , coOverwrite   :: !(Maybe Bool)
   }
 
+defCreateOptions :: CreateOptions
+defCreateOptions = CreateOptions Nothing Nothing Nothing Nothing
+
 data DocumentMeta (k :: KeyType) = DocumentMeta
-  { dmId  :: !T.Text
+  { dmId  :: !ID
   , dmKey :: !(Key k)
   , dmRev :: !Rev
   }
@@ -55,6 +60,7 @@ data DocumentError
   | DocErrConflict !T.Text
   | DocErrUnknown !HTTP.Status !T.Text
   | DocErrParseResponse !T.Text
+  | DocErrOutOfKeys
   deriving Show
 
 createDocuments
@@ -66,7 +72,6 @@ createDocuments
 createDocuments _   _    []   = return (Right [])
 createDocuments col opts docs = do
   res <- HTTP.httpLbs req (colManager col)
-  print (HTTP.responseBody res)
   return $ case HTTP.responseStatus res of
     x | x == HTTP.status200 || x == HTTP.status201 -> case dec of
       Right a   -> Right a
@@ -154,7 +159,6 @@ bulkImport
   -> IO (Either DocumentError BulkImportResult)
 bulkImport col opts docs = do
   res <- HTTP.httpLbs req (colManager col)
-  print (HTTP.responseBody res)
   return $ case HTTP.responseStatus res of
     x | x == HTTP.status201 -> case A.eitherDecode (HTTP.responseBody res) of
       Right a   -> Right a
@@ -162,6 +166,7 @@ bulkImport col opts docs = do
     x | x == HTTP.status400 -> Left (DocErrInvalidRequest (readErrorMessage res))
     x | x == HTTP.status404 -> Left DocErrUnknownCollection
     x | x == HTTP.status409 -> Left (DocErrConflict (readErrorMessage res))
+    x | x == HTTP.status500 -> Left DocErrOutOfKeys
     x                       -> Left (DocErrUnknown x (readErrorMessage res))
  where
   params = toQueryParams
@@ -192,3 +197,15 @@ bulkImport col opts docs = do
     , HTTP.requestHeaders = gzipHeader : HTTP.requestHeaders r
     }
     where r = dbMkReq (colDb col) path
+
+data Edge = Edge
+  { eTo   :: !ID
+  , eFrom :: !ID
+  }
+
+instance A.ToJSON Edge where
+  toJSON _ = error "ToJSON not support for edge"
+  toEncoding e = A.pairs
+    (  "_to" A..= eTo e
+    <> "_from" A..= eFrom e
+    )

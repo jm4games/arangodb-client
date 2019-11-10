@@ -7,7 +7,7 @@ module Database.ArangoDB.Internal where
 import Database.ArangoDB.Key
 import Database.ArangoDB.Types
 
-import Data.Text.Encoding (encodeUtf8)
+import Data.Text.Encoding (encodeUtf8, decodeUtf8)
 
 import qualified Data.Aeson as A
 import qualified Data.Aeson.Types as A
@@ -74,7 +74,7 @@ instance ToParamValue Bool where
 instance ToParamValue T.Text where
   toParamValue = HTTP.urlEncode False . encodeUtf8
 
-data Param = forall a. ToParamValue a =>Param (Maybe a)
+data Param = forall a. ToParamValue a => Param (Maybe a)
 
 toQueryParams :: [(BS.ByteString, Param)] -> BS.ByteString
 toQueryParams = BS.intercalate "&" . filter (/= mempty) . fmap
@@ -82,3 +82,22 @@ toQueryParams = BS.intercalate "&" . filter (/= mempty) . fmap
 
 gzipHeader :: HTTP.Header
 gzipHeader = (HTTP.hContentEncoding, "gzip")
+
+newtype ID = ID T.Text
+
+instance A.ToJSON ID where
+  toJSON (ID t) = A.String t
+  toEncoding (ID t) = A.toEncoding t
+
+instance A.FromJSON ID where
+  parseJSON (A.String x) = return (ID x)
+  parseJSON invalid = A.typeMismatch "ID" invalid
+
+newtype Rev = Rev T.Text
+
+instance A.FromJSON Rev where
+  parseJSON (A.String x) = return (Rev x)
+  parseJSON invalid = A.typeMismatch "Rev" invalid
+
+mkID :: Collection k -> Key k -> ID
+mkID c k = ID (decodeUtf8 (colName c) <> "/" <> keyToText k)

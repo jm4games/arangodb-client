@@ -14,6 +14,7 @@ module Database.ArangoDB.Collection
   , CollectionType(..)
   , createCollection
   , createOrGetCollection
+  , getCollection
   )
 where
 
@@ -102,11 +103,9 @@ createCollection
   :: Database -> CollectionConfig k -> IO (Either CollectionError (Collection k))
 createCollection db cfg = do
   res <- HTTP.httpLbs req (cManager (dbClient db))
-  print (HTTP.responseBody res)
   let n = encodeUtf8 (ccName cfg)
   return $ case HTTP.responseStatus res of
-    x | x == HTTP.status200 ->
-      Right (Collection n (mkColReq db n) db)
+    x | x == HTTP.status200 -> Right (Collection n (mkColReq db n) db)
     x | x == HTTP.status400 -> Left ColErrNoName
     x | x == HTTP.status404 -> Left (ColErrInvalidRequest (readErrorMessage res))
     x | x == HTTP.status409 -> Left ColErrAlreadyExist
@@ -125,3 +124,15 @@ createOrGetCollection db cfg = do
   case res of
     Left ColErrAlreadyExist -> return (Right $ Collection n (mkColReq db n) db)
     _                       -> return res
+
+getCollection :: Database -> CollectionName -> IO (Either CollectionError (Collection k))
+getCollection db name = do
+  res <- HTTP.httpLbs req (cManager (dbClient db))
+  return $ case HTTP.responseStatus res of
+    x | x == HTTP.status200 -> Right (Collection n (mkColReq db n) db)
+    x | x == HTTP.status400 -> Left (ColErrInvalidRequest (readErrorMessage res))
+    x | x == HTTP.status404 -> Left (ColErrInvalidRequest (readErrorMessage res))
+    x                       -> Left (ColErrUnknown x (readErrorMessage res))
+  where
+    req = (dbMkReq db ("/_api/collection/" <> n)) { HTTP.method = HTTP.methodGet }
+    n = encodeUtf8 name

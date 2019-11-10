@@ -65,6 +65,7 @@ data IndexError
   = IdxErrInvalidRequest !T.Text
   | IdxErrUnknownCollection
   | IdxErrUnknown !HTTP.Status !T.Text
+  deriving Show
 
 data Index = Index
 

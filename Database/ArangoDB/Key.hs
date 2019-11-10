@@ -12,6 +12,7 @@ module Database.ArangoDB.Key
   , fromTextKey
   , toPadded16Key
   , fromPadded16Key
+  , keyToText
   ) where
 
 import Data.Text.Read (decimal)
@@ -26,11 +27,11 @@ import qualified Data.UUID as UUID
 
 data KeyType = NumericKey | Padded16Key | UUIDKey | TextKey
 
+newtype Key (k ::KeyType) = Key T.Text
+
 instance A.ToJSON (Key k) where
   toJSON (Key k) = A.String k
   toEncoding (Key k) = A.toEncoding k
-
-newtype Key (k ::KeyType) = Key T.Text
 
 instance A.FromJSON (Key k) where
   parseJSON (A.String k) = pure (Key k)
@@ -63,3 +64,6 @@ toTextKey t
 
 fromTextKey :: Key 'TextKey -> T.Text
 fromTextKey (Key k) = k
+
+keyToText :: Key k -> T.Text
+keyToText (Key k) = k

@@ -1,12 +1,15 @@
 module Database.ArangoDB
   ( module X
   , Client
+  , ID
+  , Rev
+  , mkID
   , newClient
   ) where
 
 import Data.Maybe (fromMaybe)
 
-import Database.ArangoDB.Internal (Client(..))
+import Database.ArangoDB.Internal (mkID, Rev, ID, Client(..))
 
 import Database.ArangoDB.Collection as X
 import Database.ArangoDB.Database as X

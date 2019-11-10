@@ -3,7 +3,6 @@ module Database.ArangoDB.Types where
 import Data.ByteString (ByteString)
 
 import qualified Data.Aeson as A
-import qualified Data.Aeson.Types as A
 import qualified Data.Text as T
 
 type Name = T.Text
@@ -31,9 +30,3 @@ instance A.ToJSON User where
     <> "active" A..= uActive u
     <> "extra" A..= uExtra u
     )
-
-newtype Rev = Rev T.Text
-
-instance A.FromJSON Rev where
-  parseJSON (A.String x) = return (Rev x)
-  parseJSON invalid = A.typeMismatch "Rev" invalid

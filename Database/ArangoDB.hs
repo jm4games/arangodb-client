@@ -1,8 +1,20 @@
-module Database.ArangoDB (Client, newClient) where
+module Database.ArangoDB
+  ( module X
+  , Client
+  , newClient
+  ) where
 
 import Data.Maybe (fromMaybe)
 
 import Database.ArangoDB.Internal (Client(..))
+
+import Database.ArangoDB.Collection as X
+import Database.ArangoDB.Database as X
+import Database.ArangoDB.Document as X
+import Database.ArangoDB.Graph as X
+import Database.ArangoDB.Index as X
+import Database.ArangoDB.Key as X
+import Database.ArangoDB.Types as X
 
 import qualified Network.HTTP.Client as HTTP
 import qualified Network.HTTP.Types.Header as HTTP

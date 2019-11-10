@@ -15,6 +15,7 @@ import Database.ArangoDB.Types
 import Data.Text.Encoding (encodeUtf8)
 
 import qualified Data.Aeson as A
+import qualified Data.ByteString as BS
 import qualified Data.Text as T
 import qualified Network.HTTP.Client as HTTP
 import qualified Network.HTTP.Types.Method as HTTP
@@ -63,17 +64,17 @@ instance A.ToJSON EdgeDefinition where
     <> "collection" A..= edEdgeCollection def
     )
 
-mkGphReq :: Database -> Name -> MkReq
-mkGphReq db n p = dbMkReq db ("/gharial/" <> bs <> p) where bs = encodeUtf8 n
+mkGphReq :: Database -> BS.ByteString -> MkReq
+mkGphReq db n p = dbMkReq db ("/gharial/" <> n <> p)
 
-createGraph
-  :: Client -> Database -> GraphConfig -> IO (Either GraphError Graph)
-createGraph c db cfg = do
-  res <- HTTP.httpLbs req (cManager c)
+createGraph :: Database -> GraphConfig -> IO (Either GraphError Graph)
+createGraph db cfg = do
+  res <- HTTP.httpLbs req (cManager (dbClient db))
   print (HTTP.responseBody res)
+  let n = encodeUtf8 (gName cfg)
   return $ case HTTP.responseStatus res of
-    x | x == HTTP.status200 -> Right (Graph (gName cfg) (mkGphReq db (gName cfg)))
-    x | x == HTTP.status202 -> Right (Graph (gName cfg) (mkGphReq db (gName cfg)))
+    x | x == HTTP.status200 -> Right (Graph n (mkGphReq db n))
+    x | x == HTTP.status202 -> Right (Graph n (mkGphReq db n))
     x | x == HTTP.status400 -> Left (GphErrInvalidRequest (readErrorMessage res))
     x | x == HTTP.status403 -> Left GphErrForbidden
     x | x == HTTP.status409 -> Left GphErrAlreadyExist
@@ -84,11 +85,10 @@ createGraph c db cfg = do
     , HTTP.requestBody = HTTP.RequestBodyLBS (A.encode cfg)
     }
 
-createOrGetGraph
-  :: Client -> Database -> GraphConfig -> IO (Either GraphError Graph)
-createOrGetGraph c db cfg = do
-  res <- createGraph c db cfg
-  let n = gName cfg
+createOrGetGraph :: Database -> GraphConfig -> IO (Either GraphError Graph)
+createOrGetGraph db cfg = do
+  res <- createGraph db cfg
+  let n = encodeUtf8 (gName cfg)
   case res of
     Left GphErrAlreadyExist -> return (Right $ Graph n (mkGphReq db n))
     _                       -> return res

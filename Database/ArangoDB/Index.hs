@@ -57,7 +57,7 @@ toEncodingIndexType it = case it of
 data IndexCfg = IndexCfg { cfgType :: IndexType, cfgFields :: Fields }
 
 instance A.ToJSON IndexCfg where
-  toJSON = undefined
+  toJSON = error "toJSON not supported"
   toEncoding cfg =
     A.pairs (toEncodingIndexType (cfgType cfg) <> "fields" A..= cfgFields cfg)
 
@@ -69,14 +69,9 @@ data IndexError
 data Index = Index
 
 createIndex
-  :: Client
-  -> Database
-  -> CollectionName
-  -> IndexType
-  -> Fields
-  -> IO (Either IndexError Index)
-createIndex c db cn idx fields = do
-  res <- HTTP.httpLbs req (cManager c)
+  :: Database -> CollectionName -> IndexType -> Fields -> IO (Either IndexError Index)
+createIndex db cn idx fields = do
+  res <- HTTP.httpLbs req (cManager (dbClient db))
   return $ case HTTP.responseStatus res of
     x | x == HTTP.status200 -> Right Index
     x | x == HTTP.status201 -> Right Index

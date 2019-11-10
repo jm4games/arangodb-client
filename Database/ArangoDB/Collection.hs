@@ -1,3 +1,7 @@
+{-# LANGUAGE GADTs #-}
+{-# LANGUAGE DataKinds #-}
+{-# LANGUAGE KindSignatures #-}
+
 module Database.ArangoDB.Collection
   ( CollectionError(..)
   , CollectionConfig(..)
@@ -14,11 +18,13 @@ module Database.ArangoDB.Collection
 where
 
 import Database.ArangoDB.Internal
+import Database.ArangoDB.Key
 import Database.ArangoDB.Types
 
 import Data.Text.Encoding (encodeUtf8)
 
 import qualified Data.Aeson as A
+import qualified Data.ByteString as BS
 import qualified Data.Text as T
 import qualified Network.HTTP.Client as HTTP
 import qualified Network.HTTP.Types.Method as HTTP
@@ -31,15 +37,15 @@ data CollectionError
   | ColErrUnknown HTTP.Status T.Text
   deriving Show
 
-data CollectionConfig = CollectionConfig
+data CollectionConfig (k :: KeyType) = CollectionConfig
   { ccName        :: !Name
   , ccType        :: !CollectionType
   , ccWaitForSync :: !Bool
-  , ccKeyOptions  :: !KeyOption
+  , ccKeyOptions  :: !(KeyOption k)
   }
 
 -- brittany-disable-next-binding
-instance A.ToJSON CollectionConfig where
+instance A.ToJSON (CollectionConfig k) where
   toJSON c = A.object $
     [ "name" A..= ccName c
     , "waitForSync" A..= ccWaitForSync c
@@ -58,13 +64,13 @@ type Increment = Int
 type Offset = Int
 type Buckets = Int
 
-data KeyOption
-  = KeyOptTraditional !AllowUserKeys
-  | KeyOptAutoIncrement !AllowUserKeys !Increment !Offset
-  | KeyOptPadded !AllowUserKeys
-  | KeyOptUUID !AllowUserKeys
+data KeyOption k where
+  KeyOptTraditional ::AllowUserKeys -> KeyOption 'NumericKey
+  KeyOptAutoIncrement ::AllowUserKeys -> Increment -> Offset -> KeyOption 'NumericKey
+  KeyOptPadded ::AllowUserKeys -> KeyOption 'Padded16Key
+  KeyOptUUID ::AllowUserKeys -> KeyOption 'UUIDKey
 
-instance A.ToJSON KeyOption where
+instance A.ToJSON (KeyOption k) where
   toJSON (KeyOptTraditional a) = A.object ["allowUserKeys" A..= a]
   toJSON (KeyOptAutoIncrement a i o) =
     A.object ["allowUserKeys" A..= a, "increment" A..= i, "offset" A..= o]
@@ -77,28 +83,30 @@ instance A.ToJSON KeyOption where
   toEncoding (KeyOptPadded a) = A.pairs ("allowUserKeys" A..= a)
   toEncoding (KeyOptUUID   a) = A.pairs ("allowUserKeys" A..= a)
 
-data CollectionType = ColTypeDocument | ColTypeEdgeCollection !(Maybe Buckets)
+data CollectionType = ColTypeDocument | ColTypeEdge !(Maybe Buckets)
 
 toJSONCollectiontype :: CollectionType -> [(T.Text, A.Value)]
 toJSONCollectiontype ColTypeDocument = ["type" A..= (2 :: Int)]
-toJSONCollectiontype (ColTypeEdgeCollection mBuckets) =
+toJSONCollectiontype (ColTypeEdge mBuckets) =
   ["type" A..= (3 :: Int)] <> maybe [] (\b -> ["indexBuckets" A..= b]) mBuckets
 
 toEncodingCollectiontype :: CollectionType -> A.Series
 toEncodingCollectiontype ColTypeDocument = "type" A..= (2 :: Int)
-toEncodingCollectiontype (ColTypeEdgeCollection mBuckets) =
+toEncodingCollectiontype (ColTypeEdge mBuckets) =
   ("type" A..= (3 :: Int)) <> maybe mempty ("indexBuckets" A..=) mBuckets
 
-mkColReq :: Database -> Name -> MkReq
-mkColReq db n p = dbMkReq db ("/collection/" <> bs <> p) where bs = encodeUtf8 n
+mkColReq :: Database -> BS.ByteString -> MkReq
+mkColReq db n p = dbMkReq db ("/collection/" <> n <> p)
 
 createCollection
-  :: Client -> Database -> CollectionConfig -> IO (Either CollectionError Collection)
-createCollection c db cfg = do
-  res <- HTTP.httpLbs req (cManager c)
+  :: Database -> CollectionConfig k -> IO (Either CollectionError (Collection k))
+createCollection db cfg = do
+  res <- HTTP.httpLbs req (cManager (dbClient db))
   print (HTTP.responseBody res)
+  let n = encodeUtf8 (ccName cfg)
   return $ case HTTP.responseStatus res of
-    x | x == HTTP.status200 -> Right (Collection (ccName cfg) (mkColReq db (ccName cfg)))
+    x | x == HTTP.status200 ->
+      Right (Collection n (mkColReq db n) db)
     x | x == HTTP.status400 -> Left ColErrNoName
     x | x == HTTP.status404 -> Left (ColErrInvalidRequest (readErrorMessage res))
     x | x == HTTP.status409 -> Left ColErrAlreadyExist
@@ -110,10 +118,10 @@ createCollection c db cfg = do
     }
 
 createOrGetCollection
-  :: Client -> Database -> CollectionConfig -> IO (Either CollectionError Collection)
-createOrGetCollection c db cfg = do
-  res <- createCollection c db cfg
-  let n = ccName cfg
+  :: Database -> CollectionConfig k -> IO (Either CollectionError (Collection k))
+createOrGetCollection db cfg = do
+  res <- createCollection db cfg
+  let n = encodeUtf8 (ccName cfg)
   case res of
-    Left ColErrAlreadyExist -> return (Right $ Collection n (mkColReq db n))
+    Left ColErrAlreadyExist -> return (Right $ Collection n (mkColReq db n) db)
     _                       -> return res

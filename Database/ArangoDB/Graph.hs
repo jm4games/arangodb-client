@@ -70,11 +70,9 @@ mkGphReq db n p = dbMkReq db ("/gharial/" <> n <> p)
 createGraph :: Database -> GraphConfig -> IO (Either GraphError Graph)
 createGraph db cfg = do
   res <- HTTP.httpLbs req (cManager (dbClient db))
-  print (HTTP.responseBody res)
   let n = encodeUtf8 (gName cfg)
   return $ case HTTP.responseStatus res of
-    x | x == HTTP.status200 -> Right (Graph n (mkGphReq db n))
-    x | x == HTTP.status202 -> Right (Graph n (mkGphReq db n))
+    x | x == HTTP.status200 || x == HTTP.status202 -> Right (Graph n (mkGphReq db n))
     x | x == HTTP.status400 -> Left (GphErrInvalidRequest (readErrorMessage res))
     x | x == HTTP.status403 -> Left GphErrForbidden
     x | x == HTTP.status409 -> Left GphErrAlreadyExist

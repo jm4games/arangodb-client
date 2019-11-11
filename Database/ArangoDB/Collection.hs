@@ -12,6 +12,7 @@ module Database.ArangoDB.Collection
   , Buckets
   , KeyOption(..)
   , CollectionType(..)
+  , collectionName
   , createCollection
   , createOrGetCollection
   , getCollection
@@ -22,7 +23,7 @@ import Database.ArangoDB.Internal
 import Database.ArangoDB.Key
 import Database.ArangoDB.Types
 
-import Data.Text.Encoding (encodeUtf8)
+import Data.Text.Encoding (encodeUtf8, decodeUtf8)
 
 import qualified Data.Aeson as A
 import qualified Data.ByteString as BS
@@ -56,7 +57,9 @@ instance A.ToJSON (CollectionConfig k) where
   toEncoding c = A.pairs
     (  "name" A..= ccName c
     <> "waitForSync" A..= ccWaitForSync c
-    <> "keyOptions" A..= ccKeyOptions c
+    <> (case ccKeyOptions c of
+           KeyOptNone -> mempty
+           _ -> ("keyOptions" A..=) (ccKeyOptions c))
     <> toEncodingCollectiontype (ccType c)
     )
 
@@ -65,11 +68,13 @@ type Increment = Int
 type Offset = Int
 type Buckets = Int
 
+-- brittany-disable-next-binding
 data KeyOption k where
-  KeyOptTraditional ::AllowUserKeys -> KeyOption 'NumericKey
+  KeyOptTraditional   ::AllowUserKeys -> KeyOption 'NumericKey
   KeyOptAutoIncrement ::AllowUserKeys -> Increment -> Offset -> KeyOption 'NumericKey
-  KeyOptPadded ::AllowUserKeys -> KeyOption 'Padded16Key
-  KeyOptUUID ::AllowUserKeys -> KeyOption 'UUIDKey
+  KeyOptPadded        ::AllowUserKeys -> KeyOption 'Padded16Key
+  KeyOptUUID          ::AllowUserKeys -> KeyOption 'UUIDKey
+  KeyOptNone          ::KeyOption 'TextKey
 
 instance A.ToJSON (KeyOption k) where
   toJSON (KeyOptTraditional a) = A.object ["allowUserKeys" A..= a]
@@ -77,12 +82,14 @@ instance A.ToJSON (KeyOption k) where
     A.object ["allowUserKeys" A..= a, "increment" A..= i, "offset" A..= o]
   toJSON (KeyOptPadded a) = A.object ["allowUserKeys" A..= a]
   toJSON (KeyOptUUID   a) = A.object ["allowUserKeys" A..= a]
+  toJSON KeyOptNone = error "Unexpected key option none"
 
   toEncoding (KeyOptTraditional a) = A.pairs ("allowUserKeys" A..= a)
   toEncoding (KeyOptAutoIncrement a i o) =
     A.pairs ("allowUserKeys" A..= a <> "increment" A..= i <> "offset" A..= o)
   toEncoding (KeyOptPadded a) = A.pairs ("allowUserKeys" A..= a)
   toEncoding (KeyOptUUID   a) = A.pairs ("allowUserKeys" A..= a)
+  toEncoding KeyOptNone =  error "Unexpected key option none"
 
 data CollectionType = ColTypeDocument | ColTypeEdge !(Maybe Buckets)
 
@@ -98,6 +105,9 @@ toEncodingCollectiontype (ColTypeEdge mBuckets) =
 
 mkColReq :: Database -> BS.ByteString -> MkReq
 mkColReq db n p = dbMkReq db ("/collection/" <> n <> p)
+
+collectionName :: Collection k -> T.Text
+collectionName = decodeUtf8 . colName
 
 createCollection
   :: Database -> CollectionConfig k -> IO (Either CollectionError (Collection k))
@@ -133,6 +143,6 @@ getCollection db name = do
     x | x == HTTP.status400 -> Left (ColErrInvalidRequest (readErrorMessage res))
     x | x == HTTP.status404 -> Left (ColErrInvalidRequest (readErrorMessage res))
     x                       -> Left (ColErrUnknown x (readErrorMessage res))
-  where
-    req = (dbMkReq db ("/_api/collection/" <> n)) { HTTP.method = HTTP.methodGet }
-    n = encodeUtf8 name
+ where
+  req = (dbMkReq db ("/_api/collection/" <> n)) { HTTP.method = HTTP.methodGet }
+  n   = encodeUtf8 name

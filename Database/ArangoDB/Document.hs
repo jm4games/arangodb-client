@@ -13,6 +13,7 @@ module Database.ArangoDB.Document
   , DuplicateAction(..)
   , Edge(..)
   , defCreateOptions
+  , defBulkImportOptions
   , createDocuments
   , bulkImport
   )
@@ -113,22 +114,18 @@ data BulkImportResult = BulkImportResult
   , birEmpty   :: !Int
   , birUpdated :: !Int
   , birIgnored :: !Int
-  , details    :: ![T.Text]
+  , birDetails :: ![T.Text]
   }
 
+-- brittany-disable-next-binding
 instance A.FromJSON BulkImportResult where
   parseJSON (A.Object r) =
     BulkImportResult
-      <$>  r
-      A..: "created"
-      <*>  r
-      A..: "errors"
-      <*>  r
-      A..: "empty"
-      <*>  r
-      A..: "updated"
-      <*>  r
-      A..: "ignored"
+      <$>  r A..: "created"
+      <*>  r A..: "errors"
+      <*>  r A..: "empty"
+      <*>  r A..: "updated"
+      <*>  r A..: "ignored"
       <*>  (r A..:? "details" A..!= [])
   parseJSON invalid = A.typeMismatch "BulkImportResult" invalid
 
@@ -139,6 +136,16 @@ data BulkImportOptions = BulkImportOptions
   , bioOnDuplicate :: !(Maybe DuplicateAction)
   , bioComplete    :: !(Maybe Bool)
   , bioDetails     :: !(Maybe Bool)
+  }
+
+defBulkImportOptions :: BulkImportOptions
+defBulkImportOptions = BulkImportOptions
+  { bioFromPrefix  = Nothing
+  , bioToPrefix    = Nothing
+  , bioOverwrite   = Nothing
+  , bioOnDuplicate = Nothing
+  , bioComplete    = Nothing
+  , bioDetails     = Nothing
   }
 
 data DuplicateAction = DAError | DAUpdate | DAReplace | DAIgnore
@@ -170,12 +177,12 @@ bulkImport col opts docs = do
     x                       -> Left (DocErrUnknown x (readErrorMessage res))
  where
   params = toQueryParams
-    [ ("fromPrefix" , Param $ bioFromPrefix opts)
-    , ("toPrefix"   , Param $ bioToPrefix opts)
-    , ("overwrite"  , Param $ bioOverwrite opts)
-    , ("onDuplicate", Param $ bioOnDuplicate opts)
-    , ("complete"   , Param $ bioComplete opts)
-    , ("details"    , Param $ bioDetails opts)
+    [ ("fromPrefix=" , Param $ bioFromPrefix opts)
+    , ("toPrefix="   , Param $ bioToPrefix opts)
+    , ("overwrite="  , Param $ bioOverwrite opts)
+    , ("onDuplicate=", Param $ bioOnDuplicate opts)
+    , ("complete="   , Param $ bioComplete opts)
+    , ("details="    , Param $ bioDetails opts)
     ]
   path =
     "/_api/import?collection="
@@ -205,7 +212,4 @@ data Edge = Edge
 
 instance A.ToJSON Edge where
   toJSON _ = error "ToJSON not support for edge"
-  toEncoding e = A.pairs
-    (  "_to" A..= eTo e
-    <> "_from" A..= eFrom e
-    )
+  toEncoding e = A.pairs ("_to" A..= eTo e <> "_from" A..= eFrom e)

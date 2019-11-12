@@ -115,7 +115,7 @@ data BulkImportResult = BulkImportResult
   , birUpdated :: !Int
   , birIgnored :: !Int
   , birDetails :: ![T.Text]
-  }
+  } deriving Show
 
 -- brittany-disable-next-binding
 instance A.FromJSON BulkImportResult where
@@ -202,6 +202,7 @@ bulkImport col opts docs = do
     { HTTP.method         = HTTP.methodPost
     , HTTP.requestBody    = HTTP.RequestBodyLBS body
     , HTTP.requestHeaders = gzipHeader : HTTP.requestHeaders r
+    , HTTP.responseTimeout = HTTP.responseTimeoutNone
     }
     where r = dbMkReq (colDb col) path
 
